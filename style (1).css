@@ -1,0 +1,54 @@
+/* Reasoning Effort None Option - Styles */
+
+.reasoning-effort-none-settings {
+    padding: 10px;
+    margin: 10px 0;
+}
+
+.reasoning-effort-none-settings .inline-drawer {
+    background-color: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+    padding: 10px;
+}
+
+.reasoning-effort-none-settings .inline-drawer-header {
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+}
+
+.reasoning-effort-none-settings .inline-drawer-content {
+    padding-top: 10px;
+}
+
+.reasoning-effort-none-settings .checkbox_label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 5px 0;
+}
+
+.reasoning-effort-none-settings small {
+    display: block;
+    color: var(--SmartThemeQuoteColor);
+    margin-left: 25px;
+    margin-bottom: 10px;
+}
+
+.reasoning-effort-none-settings .marginTop10 {
+    margin-top: 10px;
+}
+
+/* Highlight the "none" option when selected */
+select option[value="none"] {
+    font-weight: bold;
+}
+
+/* Add subtle indicator for none option */
+#reasoning_effort option[value="none"],
+#openai_reasoning_effort option[value="none"] {
+    background-color: var(--SmartThemeBlurTintColor);
+}
