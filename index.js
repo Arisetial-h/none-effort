@@ -53,6 +53,37 @@
     }
     
     function createSettingsUI() {
+        // Check if UI already exists
+        if ($('#reasoning_none_enabled').length > 0) {
+            console.log('[Reasoning Effort None] UI already exists');
+            return;
+        }
+        
+        // Debug: Check what's available
+        console.log('[Reasoning Effort None] Looking for extensions panel...');
+        console.log('[Reasoning Effort None] #extensions_settings exists:', $('#extensions_settings').length > 0);
+        console.log('[Reasoning Effort None] #extensions_settings2 exists:', $('#extensions_settings2').length > 0);
+        console.log('[Reasoning Effort None] .extensions_block exists:', $('.extensions_block').length > 0);
+        
+        // Try multiple possible selectors
+        let targetPanel = null;
+        const selectors = ['#extensions_settings', '#extensions_settings2', '.extensions_block'];
+        
+        for (const sel of selectors) {
+            const elem = $(sel);
+            if (elem.length > 0) {
+                targetPanel = elem;
+                console.log('[Reasoning Effort None] Found panel with selector:', sel);
+                break;
+            }
+        }
+        
+        if (!targetPanel) {
+            console.log('[Reasoning Effort None] Extensions panel not found yet, will retry in 1 second');
+            setTimeout(createSettingsUI, 1000);
+            return;
+        }
+        
         const html = `
             <div class="reasoning-effort-none-settings">
                 <div class="inline-drawer">
@@ -78,7 +109,8 @@
             </div>
         `;
         
-        $('#extensions_settings').append(html);
+        targetPanel.append(html);
+        console.log('[Reasoning Effort None] Settings UI added to page');
         
         $('#reasoning_none_enabled').prop('checked', settings.enabled);
         $('#reasoning_none_auto').prop('checked', settings.autoSetNone);
@@ -114,9 +146,13 @@
         console.log('[Reasoning Effort None] Initializing...');
         
         loadSettings();
-        createSettingsUI();
         
-        setTimeout(addNoneOption, 1000);
+        // Wait a bit for the extensions panel to be ready
+        setTimeout(function() {
+            createSettingsUI();
+        }, 2000);
+        
+        setTimeout(addNoneOption, 3000);
         startWatching();
         
         console.log('[Reasoning Effort None] Ready');
