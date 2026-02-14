@@ -1,53 +1,22 @@
 /**
  * Reasoning Effort: None Option
- * Simple extension to add "none" to reasoning effort dropdown
+ * Adds "none" to reasoning effort dropdown
  */
 
 (function() {
-    console.log('[Reasoning Effort None] Script loaded');
+    console.log('[Reasoning Effort None] Extension file loaded');
 
-    // Settings key - you can change this to match your folder name if needed
     const SETTINGS_KEY = 'reasoning-effort-none-ext';
-    
-    function getSettings() {
-        if (!window.extension_settings) {
-            console.log('[Reasoning Effort None] extension_settings not available yet');
-            return { enabled: true, autoSetNone: false };
-        }
-        
-        if (!window.extension_settings[SETTINGS_KEY]) {
-            window.extension_settings[SETTINGS_KEY] = {
-                enabled: true,
-                autoSetNone: false
-            };
-        }
-        
-        return window.extension_settings[SETTINGS_KEY];
-    }
-    
-    function saveSettings() {
-        if (window.saveSettingsDebounced) {
-            window.saveSettingsDebounced();
-        }
-    }
+    let settings = { enabled: true, autoSetNone: false };
     
     function addNoneOption() {
-        const settings = getSettings();
         if (!settings.enabled) return;
         
-        // Find any reasoning effort dropdown
         const dropdown = $('#reasoning_effort, #openai_reasoning_effort, select[name="reasoning_effort"]').first();
         
-        if (dropdown.length === 0) {
-            return; // Not found, will retry later
-        }
+        if (dropdown.length === 0) return;
+        if (dropdown.find('option[value="none"]').length > 0) return;
         
-        // Don't add if already exists
-        if (dropdown.find('option[value="none"]').length > 0) {
-            return;
-        }
-        
-        // Add the option after "auto" or at the start
         const autoOption = dropdown.find('option[value="auto"]');
         if (autoOption.length > 0) {
             autoOption.after('<option value="none">None</option>');
@@ -55,7 +24,7 @@
             dropdown.prepend('<option value="none">None</option>');
         }
         
-        console.log('[Reasoning Effort None] Added "none" option to dropdown');
+        console.log('[Reasoning Effort None] Added "none" option');
         
         if (settings.autoSetNone) {
             dropdown.val('none').trigger('change');
@@ -64,6 +33,23 @@
     
     function removeNoneOption() {
         $('select option[value="none"]').remove();
+    }
+    
+    function saveSettings() {
+        if (window.extension_settings && window.saveSettingsDebounced) {
+            window.extension_settings[SETTINGS_KEY] = settings;
+            window.saveSettingsDebounced();
+        }
+    }
+    
+    function loadSettings() {
+        if (window.extension_settings) {
+            if (window.extension_settings[SETTINGS_KEY]) {
+                settings = window.extension_settings[SETTINGS_KEY];
+            } else {
+                window.extension_settings[SETTINGS_KEY] = settings;
+            }
+        }
     }
     
     function createSettingsUI() {
@@ -79,14 +65,14 @@
                             <input type="checkbox" id="reasoning_none_enabled" checked>
                             <span>Enable "None" Option</span>
                         </label>
-                        <br><small>Adds "none" to the reasoning effort dropdown.</small>
+                        <br><small>Adds "none" to reasoning effort dropdown.</small>
                         
                         <br><br>
                         <label class="checkbox_label">
                             <input type="checkbox" id="reasoning_none_auto">
                             <span>Auto-select None</span>
                         </label>
-                        <br><small>Automatically set to "none" when available.</small>
+                        <br><small>Automatically set to "none".</small>
                     </div>
                 </div>
             </div>
@@ -94,12 +80,9 @@
         
         $('#extensions_settings').append(html);
         
-        // Load current settings
-        const settings = getSettings();
         $('#reasoning_none_enabled').prop('checked', settings.enabled);
         $('#reasoning_none_auto').prop('checked', settings.autoSetNone);
         
-        // Bind events
         $('#reasoning_none_enabled').on('change', function() {
             settings.enabled = $(this).is(':checked');
             saveSettings();
@@ -114,21 +97,10 @@
             settings.autoSetNone = $(this).is(':checked');
             saveSettings();
         });
-        
-        console.log('[Reasoning Effort None] Settings UI created');
     }
     
-    function init() {
-        console.log('[Reasoning Effort None] Initializing...');
-        
-        createSettingsUI();
-        
-        // Try adding option after 1 second
-        setTimeout(addNoneOption, 1000);
-        
-        // Keep checking periodically
+    function startWatching() {
         setInterval(function() {
-            const settings = getSettings();
             if (settings.enabled) {
                 const dropdown = $('#reasoning_effort, #openai_reasoning_effort, select[name="reasoning_effort"]').first();
                 if (dropdown.length > 0 && dropdown.find('option[value="none"]').length === 0) {
@@ -136,17 +108,38 @@
                 }
             }
         }, 3000);
+    }
+    
+    function init() {
+        console.log('[Reasoning Effort None] Initializing...');
+        
+        loadSettings();
+        createSettingsUI();
+        
+        setTimeout(addNoneOption, 1000);
+        startWatching();
         
         console.log('[Reasoning Effort None] Ready');
     }
     
+    // Wait for extension_settings to be available
+    function waitForSettings() {
+        if (window.extension_settings) {
+            console.log('[Reasoning Effort None] extension_settings found, starting init');
+            init();
+        } else {
+            console.log('[Reasoning Effort None] Waiting for extension_settings...');
+            setTimeout(waitForSettings, 500);
+        }
+    }
+    
     // Start when jQuery is ready
-    if (typeof jQuery !== 'undefined' && jQuery) {
+    if (typeof jQuery !== 'undefined') {
         jQuery(function() {
-            setTimeout(init, 500);
+            waitForSettings();
         });
     } else {
-        console.error('[Reasoning Effort None] jQuery not found!');
+        console.error('[Reasoning Effort None] jQuery not found');
     }
 
 })();
