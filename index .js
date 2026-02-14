@@ -3,8 +3,8 @@
  * Adds "none" option to OpenAI reasoning effort settings
  */
 
-import { eventSource, event_types } from '../../../script.js';
-import { extension_settings, saveSettingsDebounced } from '../../extensions.js';
+(function() {
+    'use strict';
 
 const extensionName = 'reasoning-effort-none';
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}/`;
@@ -15,8 +15,19 @@ const defaultSettings = {
     autoSetNone: false
 };
 
+// Get SillyTavern globals
+const getExtensionSettings = () => window.SillyTavern?.getContext()?.extensionSettings || window.extension_settings;
+const saveSettings = () => {
+    if (window.saveSettingsDebounced) {
+        window.saveSettingsDebounced();
+    } else if (window.SillyTavern?.getContext()?.saveSettingsDebounced) {
+        window.SillyTavern.getContext().saveSettingsDebounced();
+    }
+};
+
 // Initialize extension settings
 function loadSettings() {
+    const extension_settings = getExtensionSettings();
     if (!extension_settings[extensionName]) {
         extension_settings[extensionName] = defaultSettings;
     }
@@ -28,8 +39,9 @@ function loadSettings() {
 
 // Save extension settings
 function onEnabledChange() {
+    const extension_settings = getExtensionSettings();
     extension_settings[extensionName].enabled = $('#reasoning_effort_none_enabled').prop('checked');
-    saveSettingsDebounced();
+    saveSettings();
     
     if (extension_settings[extensionName].enabled) {
         addNoneOption();
@@ -39,12 +51,15 @@ function onEnabledChange() {
 }
 
 function onAutoNoneChange() {
+    const extension_settings = getExtensionSettings();
     extension_settings[extensionName].autoSetNone = $('#reasoning_effort_auto_none').prop('checked');
-    saveSettingsDebounced();
+    saveSettings();
 }
 
 // Add "none" option to the reasoning effort dropdown
 function addNoneOption() {
+    const extension_settings = getExtensionSettings();
+    
     // Find the reasoning effort select element
     // It might be in different locations depending on the API source
     const selectors = [
@@ -110,18 +125,25 @@ function removeNoneOption() {
 
 // Monitor for settings changes
 function setupMonitoring() {
+    const extension_settings = getExtensionSettings();
+    
     // Watch for API source changes that might reload the UI
-    eventSource.on(event_types.CHAT_CHANGED, function() {
-        if (extension_settings[extensionName].enabled) {
-            // Recheck if the option needs to be added
-            setTimeout(() => {
-                const select = $('#reasoning_effort, #openai_reasoning_effort, select[name="reasoning_effort"]');
-                if (select.length > 0 && select.find('option[value="none"]').length === 0) {
-                    addNoneOption();
-                }
-            }, 100);
-        }
-    });
+    const eventSource = window.eventSource || window.SillyTavern?.getContext()?.eventSource;
+    const event_types = window.event_types || window.SillyTavern?.getContext()?.eventTypes;
+    
+    if (eventSource && event_types) {
+        eventSource.on(event_types.CHAT_CHANGED, function() {
+            if (extension_settings[extensionName].enabled) {
+                // Recheck if the option needs to be added
+                setTimeout(() => {
+                    const select = $('#reasoning_effort, #openai_reasoning_effort, select[name="reasoning_effort"]');
+                    if (select.length > 0 && select.find('option[value="none"]').length === 0) {
+                        addNoneOption();
+                    }
+                }, 100);
+            }
+        });
+    }
 }
 
 // Create the settings UI
@@ -165,6 +187,7 @@ function createSettingsUI() {
 // Observe DOM changes to catch when reasoning effort dropdown is added/modified
 function observeDOM() {
     const observer = new MutationObserver((mutations) => {
+        const extension_settings = getExtensionSettings();
         if (!extension_settings[extensionName].enabled) return;
         
         for (const mutation of mutations) {
@@ -194,6 +217,8 @@ function observeDOM() {
 // Initialize extension
 jQuery(async () => {
     console.log('[Reasoning Effort None] Initializing extension...');
+    
+    const extension_settings = getExtensionSettings();
     
     // Create settings UI
     createSettingsUI();
@@ -232,5 +257,4 @@ jQuery(async () => {
     }
 });
 
-// Export for module usage
-export { extensionName, defaultSettings };
+})(); // End of IIFE
