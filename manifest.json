@@ -1,13 +1,12 @@
 {
-    "display_name": "Disable Reasoning Effort",
-    "loading_order": 100,
+    "display_name": "Reasoning Effort: None",
+    "loading_order": 10,
     "requires": [],
     "optional": [],
     "js": "index.js",
     "css": "style.css",
-    "author": "Community",
+    "author": "Arisetial-h",
     "version": "1.0.0",
     "homePage": "https://github.com/Arisetial-h/jipjoa",
-    "description": "Removes reasoning_effort parameter from API requests for models/endpoints that don't support it.",
-    "auto_update": false
+    "auto_update": true
 }
