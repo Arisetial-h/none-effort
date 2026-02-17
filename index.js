@@ -1,188 +1,140 @@
-import { extension_settings, saveSettingsDebounced } from '../../../extensions.js';
+/**
+ * Reasoning Effort: None
+ * Adds "None" as a selectable reasoning effort option for OpenAI (and Azure OpenAI),
+ * which disables reasoning/thinking on supported models.
+ *
+ * ST's getReasoningEffort() passes unrecognized values through via the default
+ * switch case, so 'none' reaches the backend as-is. The backend's
+ * OPENAI_REASONING_EFFORT_MAP lookup returns undefined for 'none', falls back
+ * to the raw string, and sends reasoning_effort: 'none' to the OpenAI API.
+ */
 
-// Must match your GitHub repo folder name when installed by SillyTavern
-const extensionName = 'jipjoa';
+import { eventSource, event_types, saveSettingsDebounced } from '../../../../script.js';
+import { oai_settings, chat_completion_sources } from '../../../openai.js';
 
-const defaultSettings = {
-    enabled: true,
-    showNotifications: false,
-};
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────
-// Settings helpers
-// ─────────────────────────────────────────────
+const NONE_VALUE = 'none';
+const EXT_NAME = 'ReasoningEffortNone';
 
-function getSettings() {
-    if (!extension_settings[extensionName]) {
-        extension_settings[extensionName] = { ...defaultSettings };
+/**
+ * Sources where reasoning_effort: 'none' is meaningful and safe to send.
+ * Other sources either don't support reasoning_effort at all, or map
+ * unknown values to something unintended (e.g., xAI maps non-'high' → 'low').
+ */
+const SUPPORTED_SOURCES = new Set([
+    chat_completion_sources.OPENAI,
+    chat_completion_sources.AZURE_OPENAI,
+]);
+
+// ── DOM helpers ───────────────────────────────────────────────────────────────
+
+function getSelect() {
+    return /** @type {HTMLSelectElement|null} */ (
+        document.getElementById('openai_reasoning_effort')
+    );
+}
+
+/**
+ * Injects the None <option> right after the Auto option (once only).
+ */
+function ensureNoneOption() {
+    const select = getSelect();
+    if (!select) return;
+    if (select.querySelector(`option[value="${NONE_VALUE}"]`)) return;
+
+    const opt = document.createElement('option');
+    opt.value = NONE_VALUE;
+    opt.textContent = 'None';
+    opt.title = 'Sends reasoning_effort: "none" — disables reasoning on supported OpenAI models.';
+    opt.classList.add('reasoning-effort-none-option');
+
+    const autoOpt = select.querySelector('option[value="auto"]');
+    if (autoOpt) {
+        autoOpt.insertAdjacentElement('afterend', opt);
+    } else {
+        select.prepend(opt);
     }
-    return extension_settings[extensionName];
 }
 
-function saveSettings() {
-    extension_settings[extensionName] = getSettings();
-    saveSettingsDebounced();
-}
+/**
+ * Shows or hides the None option based on the active completion source,
+ * and resets the selection to 'auto' if None is selected on an unsupported source.
+ */
+function syncVisibility() {
+    const select = getSelect();
+    if (!select) return;
 
-// ─────────────────────────────────────────────
-// Core: Fetch interception
-// Intercepts every outgoing HTTP request and strips
-// reasoning_effort from the JSON body if present.
-// This is the most reliable approach — it works at
-// the network layer, independent of ST internals.
-// ─────────────────────────────────────────────
+    const opt = /** @type {HTMLOptionElement|null} */ (
+        select.querySelector(`option[value="${NONE_VALUE}"]`)
+    );
+    if (!opt) return;
 
-let fetchPatched = false;
+    const source = oai_settings?.chat_completion_source;
+    const isSupported = SUPPORTED_SOURCES.has(source);
 
-function patchFetch() {
-    if (fetchPatched) return;
-    fetchPatched = true;
+    opt.hidden = !isSupported;
+    opt.disabled = !isSupported;
 
-    const originalFetch = window.fetch.bind(window);
-
-    window.fetch = async function (url, options, ...rest) {
-        const settings = getSettings();
-
-        if (settings.enabled && options?.body && typeof options.body === 'string') {
-            try {
-                const body = JSON.parse(options.body);
-
-                if ('reasoning_effort' in body) {
-                    delete body.reasoning_effort;
-                    options = { ...options, body: JSON.stringify(body) };
-
-                    console.log(`[${extensionName}] Removed reasoning_effort from request to: ${url}`);
-
-                    if (settings.showNotifications) {
-                        toastr.info('reasoning_effort removed', 'Disable Reasoning Effort', { timeOut: 2000 });
-                    }
-                }
-            } catch (_) {
-                // Body wasn't valid JSON — leave it untouched
-            }
-        }
-
-        return originalFetch(url, options, ...rest);
-    };
-
-    console.log(`[${extensionName}] Fetch interception active`);
-}
-
-// ─────────────────────────────────────────────
-// UI: Settings panel
-// ─────────────────────────────────────────────
-
-const SETTINGS_HTML = `
-<div id="disable-reasoning-settings" class="disable-reasoning-settings">
-    <div class="inline-drawer">
-        <div class="inline-drawer-toggle inline-drawer-header">
-            <b>Disable Reasoning Effort</b>
-            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-        </div>
-        <div class="inline-drawer-content">
-            <small class="disable-reasoning-desc">
-                Strips <code>reasoning_effort</code> from API requests
-                for models/endpoints that don't support it.
-            </small>
-
-            <div class="disable-reasoning-row">
-                <label class="checkbox_label" for="dre-enabled">
-                    <input type="checkbox" id="dre-enabled" />
-                    <span>Enable (remove reasoning effort)</span>
-                </label>
-            </div>
-
-            <div class="disable-reasoning-row">
-                <label class="checkbox_label" for="dre-notify">
-                    <input type="checkbox" id="dre-notify" />
-                    <span>Show notification when removed</span>
-                </label>
-            </div>
-
-            <div class="disable-reasoning-status">
-                Status: <span id="dre-status">●</span>
-            </div>
-        </div>
-    </div>
-</div>
-`;
-
-function injectSettingsPanel() {
-    // Avoid duplicate injection
-    if ($('#disable-reasoning-settings').length) return;
-
-    // Try known ST extension panel containers in order
-    const targets = [
-        '#extensions_settings2',
-        '#extensions_settings',
-        '#extension-settings',
-        '.extension_settings',
-    ];
-
-    let injected = false;
-    for (const selector of targets) {
-        const $el = $(selector);
-        if ($el.length) {
-            $el.append(SETTINGS_HTML);
-            injected = true;
-            console.log(`[${extensionName}] Settings injected into ${selector}`);
-            break;
-        }
+    // Guard: if None is currently selected but source changed to unsupported, reset.
+    if (!isSupported && select.value === NONE_VALUE) {
+        select.value = 'auto';
+        oai_settings.reasoning_effort = 'auto';
+        saveSettingsDebounced();
+        console.info(`[${EXT_NAME}] Source changed to unsupported. Reset reasoning_effort → auto.`);
     }
+}
 
-    if (!injected) {
-        // Final fallback: retry after a short delay
-        console.warn(`[${extensionName}] No settings container found, retrying in 1 s...`);
-        setTimeout(injectSettingsPanel, 1000);
-        return;
+// ── Generate intercept ────────────────────────────────────────────────────────
+
+/**
+ * Belt-and-suspenders: strips reasoning_effort from the payload entirely
+ * if it is 'none' and the source is not in SUPPORTED_SOURCES.
+ * Handles edge cases where the select is bypassed (presets, API, etc.).
+ *
+ * ST emits CHAT_COMPLETION_SETTINGS_READY with the raw generate_data object
+ * just before the network request, allowing in-place mutation.
+ */
+function onSettingsReady(generate_data) {
+    if (!generate_data || generate_data.reasoning_effort !== NONE_VALUE) return;
+
+    if (!SUPPORTED_SOURCES.has(generate_data.chat_completion_source)) {
+        delete generate_data.reasoning_effort;
+        console.warn(
+            `[${EXT_NAME}] reasoning_effort "none" removed — ` +
+            `not supported for source: ${generate_data.chat_completion_source}`
+        );
     }
-
-    bindSettingsControls();
-    updateStatusBadge();
 }
 
-function bindSettingsControls() {
-    const settings = getSettings();
-
-    $('#dre-enabled').prop('checked', settings.enabled);
-    $('#dre-notify').prop('checked', settings.showNotifications);
-
-    $('#dre-enabled').on('change', function () {
-        getSettings().enabled = $(this).prop('checked');
-        saveSettings();
-        updateStatusBadge();
-        console.log(`[${extensionName}] Enabled: ${getSettings().enabled}`);
-    });
-
-    $('#dre-notify').on('change', function () {
-        getSettings().showNotifications = $(this).prop('checked');
-        saveSettings();
-    });
-}
-
-function updateStatusBadge() {
-    const enabled = getSettings().enabled;
-    $('#dre-status')
-        .text(enabled ? '● Active' : '○ Inactive')
-        .css('color', enabled ? '#4caf50' : '#ff9800');
-}
-
-// ─────────────────────────────────────────────
-// Init
-// ─────────────────────────────────────────────
+// ── Boot ──────────────────────────────────────────────────────────────────────
 
 jQuery(async () => {
-    console.log(`[${extensionName}] Loading...`);
+    // Wait for the full app (including settings panel HTML) to be ready.
+    await new Promise(resolve => eventSource.once(event_types.APP_READY, resolve));
 
-    // Ensure settings object exists
-    getSettings();
+    ensureNoneOption();
+    syncVisibility();
 
-    // Patch fetch immediately — must happen before any request is made
-    patchFetch();
+    // Keep the option hidden/shown as the user switches sources.
+    document
+        .getElementById('chat_completion_source')
+        ?.addEventListener('change', syncVisibility);
 
-    // Inject UI after DOM is ready
-    // Small delay gives ST time to build the extensions panel
-    setTimeout(injectSettingsPanel, 300);
+    // Also sync when a preset is loaded (oai_settings may have been replaced).
+    eventSource.on(event_types.OAI_PRESET_CHANGED, () => {
+        syncVisibility();
+        // Re-reflect oai_settings.reasoning_effort back onto the select element.
+        const select = getSelect();
+        if (select && oai_settings?.reasoning_effort !== undefined) {
+            select.value = oai_settings.reasoning_effort;
+        }
+    });
 
-    console.log(`[${extensionName}] Ready`);
+    // Intercept generate payload for unsupported sources.
+    if (event_types.CHAT_COMPLETION_SETTINGS_READY) {
+        eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, onSettingsReady);
+    }
+
+    console.info(`[${EXT_NAME}] Loaded — "None" reasoning effort option injected.`);
 });
