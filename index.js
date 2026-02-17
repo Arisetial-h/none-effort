@@ -1,181 +1,267 @@
+import { extension_settings, getContext, eventSource, event_types, saveSettingsDebounced } from '../../../extensions.js';
+
+const extensionName = 'disable-reasoning-effort';
+const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
+
+const defaultSettings = {
+    enabled: true,
+    showNotifications: false,
+};
+
+let settings = defaultSettings;
+
 /**
- * Reasoning Effort: None Option
- * Adds "none" to reasoning effort dropdown
+ * Load extension settings
  */
+function loadSettings() {
+    if (!extension_settings[extensionName]) {
+        extension_settings[extensionName] = { ...defaultSettings };
+    }
+    settings = extension_settings[extensionName];
+    
+    // Update UI to reflect loaded settings
+    $('#disable-reasoning-enabled').prop('checked', settings.enabled);
+    $('#disable-reasoning-notifications').prop('checked', settings.showNotifications);
+    
+    console.log(`[${extensionName}] Settings loaded:`, settings);
+}
 
-(function() {
-    console.log('[Reasoning Effort None] Extension file loaded');
+/**
+ * Save extension settings
+ */
+function saveSettings() {
+    extension_settings[extensionName] = settings;
+    saveSettingsDebounced();
+    console.log(`[${extensionName}] Settings saved:`, settings);
+}
 
-    const SETTINGS_KEY = 'reasoning-effort-none-ext';
-    let settings = { enabled: true, autoSetNone: false };
-    
-    function addNoneOption() {
-        if (!settings.enabled) return;
+/**
+ * Hook into generation request to modify reasoning effort
+ */
+function handleGenerationRequest(data) {
+    if (!settings.enabled) {
+        return;
+    }
+
+    // Check if reasoning_effort exists in the request
+    if (data && typeof data === 'object') {
+        const hadReasoningEffort = 'reasoning_effort' in data;
         
-        const dropdown = $('#reasoning_effort, #openai_reasoning_effort, select[name="reasoning_effort"]').first();
+        // Remove reasoning_effort parameter entirely
+        delete data.reasoning_effort;
         
-        if (dropdown.length === 0) return;
-        if (dropdown.find('option[value="none"]').length > 0) return;
-        
-        const autoOption = dropdown.find('option[value="auto"]');
-        if (autoOption.length > 0) {
-            autoOption.after('<option value="none">None</option>');
-        } else {
-            dropdown.prepend('<option value="none">None</option>');
+        if (hadReasoningEffort && settings.showNotifications) {
+            toastr.info('Reasoning effort disabled for this request', extensionName);
         }
         
-        console.log('[Reasoning Effort None] Added "none" option');
-        
-        if (settings.autoSetNone) {
-            dropdown.val('none').trigger('change');
-        }
+        console.log(`[${extensionName}] Reasoning effort removed from payload`);
     }
-    
-    function removeNoneOption() {
-        $('select option[value="none"]').remove();
+}
+
+/**
+ * Alternative approach: Override settings before generation
+ */
+function handleBeforeGeneration() {
+    if (!settings.enabled) {
+        return;
     }
-    
-    function saveSettings() {
-        if (window.extension_settings && window.saveSettingsDebounced) {
-            window.extension_settings[SETTINGS_KEY] = settings;
-            window.saveSettingsDebounced();
-        }
-    }
-    
-    function loadSettings() {
-        if (window.extension_settings) {
-            if (window.extension_settings[SETTINGS_KEY]) {
-                settings = window.extension_settings[SETTINGS_KEY];
-            } else {
-                window.extension_settings[SETTINGS_KEY] = settings;
+
+    try {
+        const context = getContext();
+        if (context.main_api && context.main_api === 'openai') {
+            const oaiSettings = context.openai_settings || {};
+            
+            // Check if reasoning_effort exists
+            if ('reasoning_effort' in oaiSettings) {
+                const originalValue = oaiSettings.reasoning_effort;
+                delete oaiSettings.reasoning_effort;
+                
+                console.log(`[${extensionName}] Removed reasoning_effort (was: ${originalValue})`);
+                
+                if (settings.showNotifications) {
+                    toastr.info('Reasoning effort disabled', extensionName, { timeOut: 2000 });
+                }
             }
         }
+    } catch (error) {
+        console.error(`[${extensionName}] Error in handleBeforeGeneration:`, error);
     }
-    
-    function createSettingsUI() {
-        // Check if UI already exists
-        if ($('#reasoning_none_enabled').length > 0) {
-            console.log('[Reasoning Effort None] UI already exists');
-            return;
-        }
-        
-        // Debug: Check what's available
-        console.log('[Reasoning Effort None] Looking for extensions panel...');
-        console.log('[Reasoning Effort None] #extensions_settings exists:', $('#extensions_settings').length > 0);
-        console.log('[Reasoning Effort None] #extensions_settings2 exists:', $('#extensions_settings2').length > 0);
-        console.log('[Reasoning Effort None] .extensions_block exists:', $('.extensions_block').length > 0);
-        
-        // Try multiple possible selectors
-        let targetPanel = null;
-        const selectors = ['#extensions_settings', '#extensions_settings2', '.extensions_block'];
-        
-        for (const sel of selectors) {
-            const elem = $(sel);
-            if (elem.length > 0) {
-                targetPanel = elem;
-                console.log('[Reasoning Effort None] Found panel with selector:', sel);
-                break;
-            }
-        }
-        
-        if (!targetPanel) {
-            console.log('[Reasoning Effort None] Extensions panel not found yet, will retry in 1 second');
-            setTimeout(createSettingsUI, 1000);
-            return;
-        }
-        
-        const html = `
-            <div class="reasoning-effort-none-settings">
-                <div class="inline-drawer">
-                    <div class="inline-drawer-toggle inline-drawer-header">
-                        <b>Reasoning Effort: None Option</b>
-                        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+}
+
+/**
+ * Initialize settings panel
+ */
+function initializeSettingsPanel() {
+    const settingsHtml = `
+        <div class="disable-reasoning-settings">
+            <div class="inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <b>Disable Reasoning Effort</b>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <div class="disable-reasoning-description">
+                        <p>Forces reasoning effort to be removed from API requests. Useful for models/endpoints that don't support this parameter.</p>
                     </div>
-                    <div class="inline-drawer-content">
-                        <label class="checkbox_label">
-                            <input type="checkbox" id="reasoning_none_enabled" checked>
-                            <span>Enable "None" Option</span>
+                    
+                    <div class="disable-reasoning-option">
+                        <label class="checkbox_label" for="disable-reasoning-enabled">
+                            <input type="checkbox" id="disable-reasoning-enabled" />
+                            <span>Enable reasoning effort removal</span>
                         </label>
-                        <br><small>Adds "none" to reasoning effort dropdown.</small>
-                        
-                        <br><br>
-                        <label class="checkbox_label">
-                            <input type="checkbox" id="reasoning_none_auto">
-                            <span>Auto-select None</span>
+                    </div>
+                    
+                    <div class="disable-reasoning-option">
+                        <label class="checkbox_label" for="disable-reasoning-notifications">
+                            <input type="checkbox" id="disable-reasoning-notifications" />
+                            <span>Show notifications when disabled</span>
                         </label>
-                        <br><small>Automatically set to "none".</small>
+                    </div>
+                    
+                    <div class="disable-reasoning-status">
+                        <small class="disable-reasoning-status-text">
+                            <i class="fa-solid fa-circle-info"></i>
+                            Status: <span id="disable-reasoning-status-value">Active</span>
+                        </small>
                     </div>
                 </div>
             </div>
-        `;
-        
-        targetPanel.append(html);
-        console.log('[Reasoning Effort None] Settings UI added to page');
-        
-        $('#reasoning_none_enabled').prop('checked', settings.enabled);
-        $('#reasoning_none_auto').prop('checked', settings.autoSetNone);
-        
-        $('#reasoning_none_enabled').on('change', function() {
-            settings.enabled = $(this).is(':checked');
-            saveSettings();
-            if (settings.enabled) {
-                addNoneOption();
-            } else {
-                removeNoneOption();
-            }
-        });
-        
-        $('#reasoning_none_auto').on('change', function() {
-            settings.autoSetNone = $(this).is(':checked');
-            saveSettings();
-        });
-    }
-    
-    function startWatching() {
-        setInterval(function() {
-            if (settings.enabled) {
-                const dropdown = $('#reasoning_effort, #openai_reasoning_effort, select[name="reasoning_effort"]').first();
-                if (dropdown.length > 0 && dropdown.find('option[value="none"]').length === 0) {
-                    addNoneOption();
-                }
-            }
-        }, 3000);
-    }
-    
-    function init() {
-        console.log('[Reasoning Effort None] Initializing...');
-        
-        loadSettings();
-        
-        // Wait a bit for the extensions panel to be ready
-        setTimeout(function() {
-            createSettingsUI();
-        }, 2000);
-        
-        setTimeout(addNoneOption, 3000);
-        startWatching();
-        
-        console.log('[Reasoning Effort None] Ready');
-    }
-    
-    // Wait for extension_settings to be available
-    function waitForSettings() {
-        if (window.extension_settings) {
-            console.log('[Reasoning Effort None] extension_settings found, starting init');
-            init();
-        } else {
-            console.log('[Reasoning Effort None] Waiting for extension_settings...');
-            setTimeout(waitForSettings, 500);
+        </div>
+    `;
+
+    // Try multiple injection points for compatibility
+    const injectTargets = [
+        '#extensions_settings',
+        '#extensions_settings2',
+        '#third-party_extensions_settings',
+        '.extensions_block'
+    ];
+
+    let injected = false;
+    for (const target of injectTargets) {
+        const $target = $(target);
+        if ($target.length) {
+            $target.append(settingsHtml);
+            injected = true;
+            console.log(`[${extensionName}] Settings panel injected into ${target}`);
+            break;
         }
     }
-    
-    // Start when jQuery is ready
-    if (typeof jQuery !== 'undefined') {
-        jQuery(function() {
-            waitForSettings();
-        });
-    } else {
-        console.error('[Reasoning Effort None] jQuery not found');
+
+    if (!injected) {
+        console.warn(`[${extensionName}] Could not find settings injection point, retrying...`);
+        setTimeout(initializeSettingsPanel, 1000);
+        return;
     }
 
-})();
+    // Attach event listeners
+    $('#disable-reasoning-enabled').on('change', function() {
+        settings.enabled = $(this).prop('checked');
+        saveSettings();
+        updateStatusDisplay();
+    });
+
+    $('#disable-reasoning-notifications').on('change', function() {
+        settings.showNotifications = $(this).prop('checked');
+        saveSettings();
+    });
+
+    // Initialize status display
+    updateStatusDisplay();
+}
+
+/**
+ * Update status display in settings panel
+ */
+function updateStatusDisplay() {
+    const statusText = settings.enabled ? 'Active' : 'Inactive';
+    const statusColor = settings.enabled ? '#4caf50' : '#ff9800';
+    
+    $('#disable-reasoning-status-value')
+        .text(statusText)
+        .css('color', statusColor);
+}
+
+/**
+ * Monkey-patch approach: Override the resolveReasoningEffort function
+ */
+function patchReasoningEffortResolution() {
+    if (!settings.enabled) {
+        return;
+    }
+
+    // Store reference to potential settings object
+    try {
+        const context = getContext();
+        
+        // Hook into the settings object if available
+        if (window.oai_settings || context.openai_settings) {
+            const settingsObj = window.oai_settings || context.openai_settings;
+            
+            // Create a proxy to intercept reasoning_effort access
+            if (settingsObj && !settingsObj._reasoning_effort_patched) {
+                const originalReasoningEffort = settingsObj.reasoning_effort;
+                
+                Object.defineProperty(settingsObj, 'reasoning_effort', {
+                    get: function() {
+                        if (settings.enabled) {
+                            return undefined; // Return undefined to disable
+                        }
+                        return originalReasoningEffort;
+                    },
+                    set: function(value) {
+                        if (!settings.enabled) {
+                            originalReasoningEffort = value;
+                        }
+                        // If enabled, ignore the set operation
+                    },
+                    configurable: true,
+                });
+                
+                settingsObj._reasoning_effort_patched = true;
+                console.log(`[${extensionName}] Reasoning effort setting patched`);
+            }
+        }
+    } catch (error) {
+        console.error(`[${extensionName}] Error patching reasoning effort:`, error);
+    }
+}
+
+/**
+ * Initialize extension
+ */
+jQuery(async () => {
+    console.log(`[${extensionName}] Extension loading...`);
+
+    // Load settings
+    loadSettings();
+
+    // Initialize settings panel
+    setTimeout(initializeSettingsPanel, 100);
+
+    // Hook into events
+    // Try multiple event types for maximum compatibility
+    if (eventSource) {
+        // Before generation starts
+        eventSource.on(event_types.GENERATION_STARTED, handleBeforeGeneration);
+        
+        // When chat completion settings are ready
+        if (event_types.CHAT_COMPLETION_SETTINGS_READY) {
+            eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, handleGenerationRequest);
+        }
+        
+        console.log(`[${extensionName}] Event hooks registered`);
+    }
+
+    // Apply monkey-patch approach
+    patchReasoningEffortResolution();
+    
+    // Re-apply patch periodically to handle setting changes
+    setInterval(() => {
+        if (settings.enabled) {
+            patchReasoningEffortResolution();
+        }
+    }, 5000);
+
+    console.log(`[${extensionName}] Extension loaded successfully`);
+});
