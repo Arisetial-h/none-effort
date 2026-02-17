@@ -1,117 +1,18 @@
-/* Disable Reasoning Effort — Mobile-compatible styles */
+/*
+ * Reasoning Effort: None — style.css
+ * Subtle visual cue on the None option so it reads as a "disable" action
+ * rather than just another level in the low→high progression.
+ */
 
-.disable-reasoning-settings {
-    margin: 10px 0;
+/* Dim the option slightly to signal it's a disabling action, not a level */
+.reasoning-effort-none-option {
+    font-style: italic;
+    opacity: 0.85;
 }
 
-.disable-reasoning-settings .inline-drawer {
-    background: var(--SmartThemeBlurTintColor, rgba(0,0,0,0.1));
-    border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.1));
-    border-radius: 5px;
-    margin-bottom: 10px;
-}
-
-.disable-reasoning-settings .inline-drawer-header {
-    padding: 12px 15px;
-    cursor: pointer;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    user-select: none;
-    font-size: 14px;
-}
-
-.disable-reasoning-settings .inline-drawer-content {
-    padding: 15px;
-    border-top: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.05));
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.disable-reasoning-desc {
-    color: var(--SmartThemeBodyColor, #aaa);
-    font-size: 12px;
-    line-height: 1.5;
-}
-
-.disable-reasoning-desc code {
-    background: rgba(255,255,255,0.08);
-    padding: 1px 5px;
-    border-radius: 3px;
-    font-size: 11px;
-}
-
-.disable-reasoning-row {
-    display: flex;
-    align-items: center;
-}
-
-.disable-reasoning-row .checkbox_label {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    cursor: pointer;
-    font-size: 14px;
-    width: 100%;
-}
-
-.disable-reasoning-row .checkbox_label input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    cursor: pointer;
-    flex-shrink: 0;
-}
-
-.disable-reasoning-status {
-    font-size: 12px;
-    color: var(--SmartThemeBodyColor, #aaa);
-    padding: 8px 10px;
-    background: rgba(0,0,0,0.2);
-    border-radius: 4px;
-}
-
-#dre-status {
-    font-weight: 600;
-    margin-left: 4px;
-}
-
-/* ── Mobile ── */
-@media (max-width: 768px) {
-    .disable-reasoning-settings .inline-drawer-header {
-        padding: 10px 12px;
-        font-size: 13px;
-    }
-
-    .disable-reasoning-settings .inline-drawer-content {
-        padding: 12px;
-        gap: 10px;
-    }
-
-    .disable-reasoning-row .checkbox_label {
-        font-size: 13px;
-    }
-}
-
-/* Touch-device — larger tap targets */
-@media (hover: none) and (pointer: coarse) {
-    .disable-reasoning-row .checkbox_label {
-        min-height: 44px;
-    }
-
-    .disable-reasoning-row .checkbox_label input[type="checkbox"] {
-        width: 22px;
-        height: 22px;
-    }
-
-    .disable-reasoning-settings .inline-drawer-header {
-        min-height: 44px;
-    }
-}
-
-/* Reduced motion */
-@media (prefers-reduced-motion: reduce) {
-    .disable-reasoning-settings * {
-        transition: none !important;
-    }
+/* When None is actively selected, tint the select border amber
+   so the user has a clear reminder that reasoning is off */
+#openai_reasoning_effort:has(option[value="none"]:checked) {
+    outline: 1px solid color-mix(in srgb, var(--warning-color, #e8a838) 60%, transparent);
+    border-color: color-mix(in srgb, var(--warning-color, #e8a838) 60%, transparent);
 }
