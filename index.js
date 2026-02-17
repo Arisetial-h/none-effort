@@ -1,267 +1,188 @@
-import { extension_settings, getContext, eventSource, event_types, saveSettingsDebounced } from '../../../extensions.js';
+import { extension_settings, saveSettingsDebounced } from '../../../extensions.js';
 
-const extensionName = 'disable-reasoning-effort';
-const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
+// Must match your GitHub repo folder name when installed by SillyTavern
+const extensionName = 'jipjoa';
 
 const defaultSettings = {
     enabled: true,
     showNotifications: false,
 };
 
-let settings = defaultSettings;
+// ─────────────────────────────────────────────
+// Settings helpers
+// ─────────────────────────────────────────────
 
-/**
- * Load extension settings
- */
-function loadSettings() {
+function getSettings() {
     if (!extension_settings[extensionName]) {
         extension_settings[extensionName] = { ...defaultSettings };
     }
-    settings = extension_settings[extensionName];
-    
-    // Update UI to reflect loaded settings
-    $('#disable-reasoning-enabled').prop('checked', settings.enabled);
-    $('#disable-reasoning-notifications').prop('checked', settings.showNotifications);
-    
-    console.log(`[${extensionName}] Settings loaded:`, settings);
+    return extension_settings[extensionName];
 }
 
-/**
- * Save extension settings
- */
 function saveSettings() {
-    extension_settings[extensionName] = settings;
+    extension_settings[extensionName] = getSettings();
     saveSettingsDebounced();
-    console.log(`[${extensionName}] Settings saved:`, settings);
 }
 
-/**
- * Hook into generation request to modify reasoning effort
- */
-function handleGenerationRequest(data) {
-    if (!settings.enabled) {
-        return;
-    }
+// ─────────────────────────────────────────────
+// Core: Fetch interception
+// Intercepts every outgoing HTTP request and strips
+// reasoning_effort from the JSON body if present.
+// This is the most reliable approach — it works at
+// the network layer, independent of ST internals.
+// ─────────────────────────────────────────────
 
-    // Check if reasoning_effort exists in the request
-    if (data && typeof data === 'object') {
-        const hadReasoningEffort = 'reasoning_effort' in data;
-        
-        // Remove reasoning_effort parameter entirely
-        delete data.reasoning_effort;
-        
-        if (hadReasoningEffort && settings.showNotifications) {
-            toastr.info('Reasoning effort disabled for this request', extensionName);
-        }
-        
-        console.log(`[${extensionName}] Reasoning effort removed from payload`);
-    }
-}
+let fetchPatched = false;
 
-/**
- * Alternative approach: Override settings before generation
- */
-function handleBeforeGeneration() {
-    if (!settings.enabled) {
-        return;
-    }
+function patchFetch() {
+    if (fetchPatched) return;
+    fetchPatched = true;
 
-    try {
-        const context = getContext();
-        if (context.main_api && context.main_api === 'openai') {
-            const oaiSettings = context.openai_settings || {};
-            
-            // Check if reasoning_effort exists
-            if ('reasoning_effort' in oaiSettings) {
-                const originalValue = oaiSettings.reasoning_effort;
-                delete oaiSettings.reasoning_effort;
-                
-                console.log(`[${extensionName}] Removed reasoning_effort (was: ${originalValue})`);
-                
-                if (settings.showNotifications) {
-                    toastr.info('Reasoning effort disabled', extensionName, { timeOut: 2000 });
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = async function (url, options, ...rest) {
+        const settings = getSettings();
+
+        if (settings.enabled && options?.body && typeof options.body === 'string') {
+            try {
+                const body = JSON.parse(options.body);
+
+                if ('reasoning_effort' in body) {
+                    delete body.reasoning_effort;
+                    options = { ...options, body: JSON.stringify(body) };
+
+                    console.log(`[${extensionName}] Removed reasoning_effort from request to: ${url}`);
+
+                    if (settings.showNotifications) {
+                        toastr.info('reasoning_effort removed', 'Disable Reasoning Effort', { timeOut: 2000 });
+                    }
                 }
+            } catch (_) {
+                // Body wasn't valid JSON — leave it untouched
             }
         }
-    } catch (error) {
-        console.error(`[${extensionName}] Error in handleBeforeGeneration:`, error);
-    }
+
+        return originalFetch(url, options, ...rest);
+    };
+
+    console.log(`[${extensionName}] Fetch interception active`);
 }
 
-/**
- * Initialize settings panel
- */
-function initializeSettingsPanel() {
-    const settingsHtml = `
-        <div class="disable-reasoning-settings">
-            <div class="inline-drawer">
-                <div class="inline-drawer-toggle inline-drawer-header">
-                    <b>Disable Reasoning Effort</b>
-                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-                </div>
-                <div class="inline-drawer-content">
-                    <div class="disable-reasoning-description">
-                        <p>Forces reasoning effort to be removed from API requests. Useful for models/endpoints that don't support this parameter.</p>
-                    </div>
-                    
-                    <div class="disable-reasoning-option">
-                        <label class="checkbox_label" for="disable-reasoning-enabled">
-                            <input type="checkbox" id="disable-reasoning-enabled" />
-                            <span>Enable reasoning effort removal</span>
-                        </label>
-                    </div>
-                    
-                    <div class="disable-reasoning-option">
-                        <label class="checkbox_label" for="disable-reasoning-notifications">
-                            <input type="checkbox" id="disable-reasoning-notifications" />
-                            <span>Show notifications when disabled</span>
-                        </label>
-                    </div>
-                    
-                    <div class="disable-reasoning-status">
-                        <small class="disable-reasoning-status-text">
-                            <i class="fa-solid fa-circle-info"></i>
-                            Status: <span id="disable-reasoning-status-value">Active</span>
-                        </small>
-                    </div>
-                </div>
+// ─────────────────────────────────────────────
+// UI: Settings panel
+// ─────────────────────────────────────────────
+
+const SETTINGS_HTML = `
+<div id="disable-reasoning-settings" class="disable-reasoning-settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>Disable Reasoning Effort</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <small class="disable-reasoning-desc">
+                Strips <code>reasoning_effort</code> from API requests
+                for models/endpoints that don't support it.
+            </small>
+
+            <div class="disable-reasoning-row">
+                <label class="checkbox_label" for="dre-enabled">
+                    <input type="checkbox" id="dre-enabled" />
+                    <span>Enable (remove reasoning effort)</span>
+                </label>
+            </div>
+
+            <div class="disable-reasoning-row">
+                <label class="checkbox_label" for="dre-notify">
+                    <input type="checkbox" id="dre-notify" />
+                    <span>Show notification when removed</span>
+                </label>
+            </div>
+
+            <div class="disable-reasoning-status">
+                Status: <span id="dre-status">●</span>
             </div>
         </div>
-    `;
+    </div>
+</div>
+`;
 
-    // Try multiple injection points for compatibility
-    const injectTargets = [
-        '#extensions_settings',
+function injectSettingsPanel() {
+    // Avoid duplicate injection
+    if ($('#disable-reasoning-settings').length) return;
+
+    // Try known ST extension panel containers in order
+    const targets = [
         '#extensions_settings2',
-        '#third-party_extensions_settings',
-        '.extensions_block'
+        '#extensions_settings',
+        '#extension-settings',
+        '.extension_settings',
     ];
 
     let injected = false;
-    for (const target of injectTargets) {
-        const $target = $(target);
-        if ($target.length) {
-            $target.append(settingsHtml);
+    for (const selector of targets) {
+        const $el = $(selector);
+        if ($el.length) {
+            $el.append(SETTINGS_HTML);
             injected = true;
-            console.log(`[${extensionName}] Settings panel injected into ${target}`);
+            console.log(`[${extensionName}] Settings injected into ${selector}`);
             break;
         }
     }
 
     if (!injected) {
-        console.warn(`[${extensionName}] Could not find settings injection point, retrying...`);
-        setTimeout(initializeSettingsPanel, 1000);
+        // Final fallback: retry after a short delay
+        console.warn(`[${extensionName}] No settings container found, retrying in 1 s...`);
+        setTimeout(injectSettingsPanel, 1000);
         return;
     }
 
-    // Attach event listeners
-    $('#disable-reasoning-enabled').on('change', function() {
-        settings.enabled = $(this).prop('checked');
+    bindSettingsControls();
+    updateStatusBadge();
+}
+
+function bindSettingsControls() {
+    const settings = getSettings();
+
+    $('#dre-enabled').prop('checked', settings.enabled);
+    $('#dre-notify').prop('checked', settings.showNotifications);
+
+    $('#dre-enabled').on('change', function () {
+        getSettings().enabled = $(this).prop('checked');
         saveSettings();
-        updateStatusDisplay();
+        updateStatusBadge();
+        console.log(`[${extensionName}] Enabled: ${getSettings().enabled}`);
     });
 
-    $('#disable-reasoning-notifications').on('change', function() {
-        settings.showNotifications = $(this).prop('checked');
+    $('#dre-notify').on('change', function () {
+        getSettings().showNotifications = $(this).prop('checked');
         saveSettings();
     });
-
-    // Initialize status display
-    updateStatusDisplay();
 }
 
-/**
- * Update status display in settings panel
- */
-function updateStatusDisplay() {
-    const statusText = settings.enabled ? 'Active' : 'Inactive';
-    const statusColor = settings.enabled ? '#4caf50' : '#ff9800';
-    
-    $('#disable-reasoning-status-value')
-        .text(statusText)
-        .css('color', statusColor);
+function updateStatusBadge() {
+    const enabled = getSettings().enabled;
+    $('#dre-status')
+        .text(enabled ? '● Active' : '○ Inactive')
+        .css('color', enabled ? '#4caf50' : '#ff9800');
 }
 
-/**
- * Monkey-patch approach: Override the resolveReasoningEffort function
- */
-function patchReasoningEffortResolution() {
-    if (!settings.enabled) {
-        return;
-    }
+// ─────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────
 
-    // Store reference to potential settings object
-    try {
-        const context = getContext();
-        
-        // Hook into the settings object if available
-        if (window.oai_settings || context.openai_settings) {
-            const settingsObj = window.oai_settings || context.openai_settings;
-            
-            // Create a proxy to intercept reasoning_effort access
-            if (settingsObj && !settingsObj._reasoning_effort_patched) {
-                const originalReasoningEffort = settingsObj.reasoning_effort;
-                
-                Object.defineProperty(settingsObj, 'reasoning_effort', {
-                    get: function() {
-                        if (settings.enabled) {
-                            return undefined; // Return undefined to disable
-                        }
-                        return originalReasoningEffort;
-                    },
-                    set: function(value) {
-                        if (!settings.enabled) {
-                            originalReasoningEffort = value;
-                        }
-                        // If enabled, ignore the set operation
-                    },
-                    configurable: true,
-                });
-                
-                settingsObj._reasoning_effort_patched = true;
-                console.log(`[${extensionName}] Reasoning effort setting patched`);
-            }
-        }
-    } catch (error) {
-        console.error(`[${extensionName}] Error patching reasoning effort:`, error);
-    }
-}
-
-/**
- * Initialize extension
- */
 jQuery(async () => {
-    console.log(`[${extensionName}] Extension loading...`);
+    console.log(`[${extensionName}] Loading...`);
 
-    // Load settings
-    loadSettings();
+    // Ensure settings object exists
+    getSettings();
 
-    // Initialize settings panel
-    setTimeout(initializeSettingsPanel, 100);
+    // Patch fetch immediately — must happen before any request is made
+    patchFetch();
 
-    // Hook into events
-    // Try multiple event types for maximum compatibility
-    if (eventSource) {
-        // Before generation starts
-        eventSource.on(event_types.GENERATION_STARTED, handleBeforeGeneration);
-        
-        // When chat completion settings are ready
-        if (event_types.CHAT_COMPLETION_SETTINGS_READY) {
-            eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, handleGenerationRequest);
-        }
-        
-        console.log(`[${extensionName}] Event hooks registered`);
-    }
+    // Inject UI after DOM is ready
+    // Small delay gives ST time to build the extensions panel
+    setTimeout(injectSettingsPanel, 300);
 
-    // Apply monkey-patch approach
-    patchReasoningEffortResolution();
-    
-    // Re-apply patch periodically to handle setting changes
-    setInterval(() => {
-        if (settings.enabled) {
-            patchReasoningEffortResolution();
-        }
-    }, 5000);
-
-    console.log(`[${extensionName}] Extension loaded successfully`);
+    console.log(`[${extensionName}] Ready`);
 });
