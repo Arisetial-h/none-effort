@@ -1,12 +1,13 @@
 {
-  "display_name": "Reasoning Effort: None Option",
-  "loading_order": 1000,
-  "requires": [],
-  "optional": [],
-  "js": "index.js",
-  "css": "style.css",
-  "author": "Community Extension",
-  "version": "1.0.0",
-  "homePage": "https://github.com/yourusername/reasoning-effort-none",
-  "description": "Adds 'none' option to reasoning effort settings for OpenAI and compatible APIs"
+    "display_name": "Disable Reasoning Effort",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Community",
+    "version": "1.0.0",
+    "homePage": "https://github.com/Arisetial-h/jipjoa",
+    "description": "Removes reasoning_effort parameter from API requests for models/endpoints that don't support it.",
+    "auto_update": false
 }
