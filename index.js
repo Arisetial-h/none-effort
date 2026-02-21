@@ -122,7 +122,7 @@ jQuery(async () => {
         ?.addEventListener('change', syncVisibility);
 
     // Also sync when a preset is loaded (oai_settings may have been replaced).
-    eventSource.on(event_types.OAI_PRESET_CHANGED, () => {
+    eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => {
         syncVisibility();
         // Re-reflect oai_settings.reasoning_effort back onto the select element.
         const select = getSelect();
