@@ -1,6 +1,7 @@
 /**
  * Reasoning Effort: None
- * CUSTOM source + GPT 모델 지원 추가
+ * CUSTOM source + GPT model support
+ * Fixed: preset save & load, no settings overwrite, no change event re-entry
  */
 
 import { eventSource, event_types, saveSettingsDebounced } from '../../../../script.js';
@@ -16,26 +17,29 @@ const ALWAYS_SUPPORTED_SOURCES = new Set([
     chat_completion_sources.AZURE_OPENAI,
 ]);
 
+// ── 재진입 방지 플래그 (#3 fix) ───────────────────────────────────────────────
+// syncVisibility가 select.value를 직접 바꿀 때 change 이벤트가 발생할 수 있음.
+// 이 플래그가 true인 동안은 onSelectChange를 무시해서 재진입을 막는다.
+let _suppressChangeEvent = false;
+
 // ── Model detection ───────────────────────────────────────────────────────────
 
-/**
- * GPT 계열 모델인지 판단 (reasoning_effort: 'none'을 지원하는)
- * @param {string} modelId 
- * @returns {boolean}
- */
 function isGptModel(modelId) {
     if (!modelId || typeof modelId !== 'string') return false;
-    
-    // o1 계열, gpt-4o, gpt-5 등
     return /^(o1-|gpt-)/i.test(modelId);
 }
 
-/**
- * 현재 선택된 모델 ID 가져오기
- * @returns {string}
- */
 function getCurrentModel() {
     return oai_settings?.openai_model || '';
+}
+
+function isCurrentSourceSupported() {
+    const source = oai_settings?.chat_completion_source;
+    if (ALWAYS_SUPPORTED_SOURCES.has(source)) return true;
+    if (source === chat_completion_sources.CUSTOM) {
+        return isGptModel(getCurrentModel());
+    }
+    return false;
 }
 
 // ── DOM helpers ───────────────────────────────────────────────────────────────
@@ -66,12 +70,14 @@ function ensureNoneOption() {
 }
 
 /**
- * None 옵션 표시 여부 결정:
- * - OPENAI / AZURE_OPENAI → 항상 표시
- * - CUSTOM → 모델이 GPT 계열이면 표시
- * - 기타 → 숨김
+ * None 옵션의 표시/숨김만 담당한다.
+ *
+ * #2 fix: 이 함수는 oai_settings를 절대 건드리지 않는다.
+ * 설정 저장은 오직 onSelectChange(사용자 직접 변경)에서만 한다.
+ *
+ * @param {boolean} applyValue - true면 oai_settings의 현재 값을 select UI에 반영한다.
  */
-function syncVisibility() {
+function syncVisibility(applyValue = false) {
     const select = getSelect();
     if (!select) return;
 
@@ -80,29 +86,68 @@ function syncVisibility() {
     );
     if (!opt) return;
 
-    const source = oai_settings?.chat_completion_source;
-    let isSupported = ALWAYS_SUPPORTED_SOURCES.has(source);
+    const supported = isCurrentSourceSupported();
+    opt.hidden = !supported;
+    opt.disabled = !supported;
 
-    // CUSTOM source: 모델명 기반 판단
-    if (source === chat_completion_sources.CUSTOM) {
-        const model = getCurrentModel();
-        isSupported = isGptModel(model);
-        
-        if (isSupported) {
-            console.debug(`[${EXT_NAME}] CUSTOM source + GPT model detected: ${model}`);
+    if (applyValue) {
+        const savedValue = oai_settings?.reasoning_effort;
+        if (savedValue !== undefined) {
+            // #3 fix: select.value 변경이 onSelectChange를 재진입시키지 않도록 플래그 설정
+            _suppressChangeEvent = true;
+            try {
+                if (savedValue === NONE_VALUE && !supported) {
+                    // none이 저장돼 있지만 현재 source가 지원 안 함:
+                    // UI만 auto로 보여준다. oai_settings는 건드리지 않는다. (#2 fix)
+                    select.value = 'auto';
+                } else {
+                    select.value = savedValue;
+                }
+            } finally {
+                _suppressChangeEvent = false;
+            }
+        }
+    } else {
+        // applyValue 없이 호출 (source/model 변경 시):
+        // none이 선택 중인데 지원 안 하면 UI만 auto로 되돌린다.
+        // oai_settings는 건드리지 않는다. (#2 fix)
+        if (!supported && select.value === NONE_VALUE) {
+            _suppressChangeEvent = true;
+            try {
+                select.value = 'auto';
+            } finally {
+                _suppressChangeEvent = false;
+            }
+            console.info(`[${EXT_NAME}] Source/model unsupported — UI reset to auto (settings preserved).`);
         }
     }
+}
 
-    opt.hidden = !isSupported;
-    opt.disabled = !isSupported;
+// ── Save: 사용자가 직접 select를 바꿀 때만 oai_settings에 저장 ─────────────────
 
-    // 비지원 상태에서 None이 선택되어 있으면 auto로 리셋
-    if (!isSupported && select.value === NONE_VALUE) {
-        select.value = 'auto';
-        oai_settings.reasoning_effort = 'auto';
-        saveSettingsDebounced();
-        console.info(`[${EXT_NAME}] Model/source changed to unsupported. Reset reasoning_effort → auto.`);
+function onSelectChange() {
+    // #3 fix: syncVisibility 내부에서 발생한 change 이벤트는 무시
+    if (_suppressChangeEvent) return;
+
+    const select = getSelect();
+    if (!select) return;
+
+    const value = select.value;
+
+    // none 선택인데 지원 안 하면 무시하고 되돌림
+    if (value === NONE_VALUE && !isCurrentSourceSupported()) {
+        _suppressChangeEvent = true;
+        try {
+            select.value = oai_settings?.reasoning_effort ?? 'auto';
+        } finally {
+            _suppressChangeEvent = false;
+        }
+        return;
     }
+
+    oai_settings.reasoning_effort = value;
+    saveSettingsDebounced();
+    console.debug(`[${EXT_NAME}] reasoning_effort saved: ${value}`);
 }
 
 // ── Generate intercept ────────────────────────────────────────────────────────
@@ -132,25 +177,25 @@ jQuery(async () => {
     await new Promise(resolve => eventSource.once(event_types.APP_READY, resolve));
 
     ensureNoneOption();
-    syncVisibility();
+    syncVisibility(true);
 
-    // Source 변경 감지
+    // 사용자 직접 변경 → 저장
+    getSelect()?.addEventListener('change', onSelectChange);
+
+    // Source 변경 → UI만 갱신
     document
         .getElementById('chat_completion_source')
-        ?.addEventListener('change', syncVisibility);
+        ?.addEventListener('change', () => syncVisibility(false));
 
-    // 모델 변경 감지 (CUSTOM에서 모델 바꿀 때)
+    // 모델 변경 (CUSTOM) → UI만 갱신
     document
         .getElementById('model_openai_select')
-        ?.addEventListener('change', syncVisibility);
+        ?.addEventListener('change', () => syncVisibility(false));
 
-    // 프리셋 변경 후
+    // 프리셋 교체 후 → 옵션 재주입 + 저장된 값 UI에 반영
     eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => {
-        syncVisibility();
-        const select = getSelect();
-        if (select && oai_settings?.reasoning_effort !== undefined) {
-            select.value = oai_settings.reasoning_effort;
-        }
+        ensureNoneOption();
+        syncVisibility(true);
     });
 
     // Generate 페이로드 최종 검증
@@ -158,5 +203,5 @@ jQuery(async () => {
         eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, onSettingsReady);
     }
 
-    console.info(`[${EXT_NAME}] Loaded — "None" option with CUSTOM source + GPT model support.`);
+    console.info(`[${EXT_NAME}] Loaded.`);
 });
