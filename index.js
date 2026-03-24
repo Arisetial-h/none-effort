@@ -188,9 +188,9 @@ jQuery(async () => {
         ?.addEventListener('change', () => syncVisibility(false));
 
     // 모델 변경 (CUSTOM) → UI만 갱신
-    document
-        .getElementById('model_openai_select')
-        ?.addEventListener('change', () => syncVisibility(false));
+document
+    .getElementById('model_openai_select')
+    ?.addEventListener('change', () => setTimeout(() => syncVisibility(false), 0));
 
     // 프리셋 교체 후 → 옵션 재주입 + 저장된 값 UI에 반영
     eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => {
