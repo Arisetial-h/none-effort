@@ -1,8 +1,14 @@
 /*
- * Reasoning Effort: None — style.css
- * Subtle visual cue on the None option so it reads as a "disable" action
- * rather than just another level in the low→high progression.
+ * Reasoning Effort: None + DeepSeek Thinking Toggle — style.css
+ * v1.1.0
+ *
+ * Section A: GPT None option (original, unchanged)
+ * Section B: DeepSeek Thinking toggle UI (new)
  */
+
+/* ═══════════════════════════════════════════════════════════════════
+   SECTION A — GPT None option  (original styles, unchanged)
+   ═══════════════════════════════════════════════════════════════════ */
 
 /* Dim the option slightly to signal it's a disabling action, not a level */
 .reasoning-effort-none-option {
@@ -10,9 +16,152 @@
     opacity: 0.85;
 }
 
-/* When None is actively selected, tint the select border amber
-   so the user has a clear reminder that reasoning is off */
+/* When None is actively selected, tint the select border amber */
 #openai_reasoning_effort:has(option[value="none"]:checked) {
     outline: 1px solid color-mix(in srgb, var(--warning-color, #e8a838) 60%, transparent);
     border-color: color-mix(in srgb, var(--warning-color, #e8a838) 60%, transparent);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   SECTION B — DeepSeek Thinking toggle
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Outer container — appears below the reasoning effort block */
+.ren-deepseek-container {
+    margin-top: 6px;
+    padding: 7px 10px 6px;
+    border-radius: 6px;
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor, #555) 55%, transparent);
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #1a1a2e) 25%, transparent);
+    font-size: 0.9em;
+}
+
+/* Main row: icon + label + toggle + refresh */
+.ren-deepseek-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.ren-deepseek-icon {
+    flex-shrink: 0;
+    font-size: 1em;
+    line-height: 1;
+}
+
+.ren-deepseek-label {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Hint line below the row */
+.ren-deepseek-hint {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.78em;
+    opacity: 0.55;
+    letter-spacing: 0.01em;
+}
+
+.ren-deepseek-hint code {
+    font-family: monospace;
+    background: color-mix(in srgb, currentColor 12%, transparent);
+    border-radius: 3px;
+    padding: 1px 3px;
+}
+
+/* State label color: green when enabled, muted when disabled */
+#ren_deepseek_state_label {
+    color: var(--SmartThemeLinkColor, #4a90d9);
+    font-weight: 600;
+}
+
+/* ── Toggle switch ───────────────────────────────────────────────── */
+
+.ren-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+/* Hide native checkbox */
+.ren-toggle input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+}
+
+/* Track */
+.ren-toggle-track {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--SmartThemeBorderColor, #666) 80%, transparent);
+    transition: background 0.2s ease;
+}
+
+/* Thumb */
+.ren-toggle-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+    transition: transform 0.2s ease;
+}
+
+/* Checked state */
+.ren-toggle input:checked ~ .ren-toggle-track {
+    background: var(--SmartThemeLinkColor, #4a90d9);
+}
+
+.ren-toggle input:checked ~ .ren-toggle-track .ren-toggle-thumb {
+    transform: translateX(16px);
+}
+
+/* Focus ring for accessibility */
+.ren-toggle input:focus-visible ~ .ren-toggle-track {
+    outline: 2px solid var(--SmartThemeLinkColor, #4a90d9);
+    outline-offset: 2px;
+}
+
+/* Dim toggle when container is becoming irrelevant (no hover effect) */
+.ren-deepseek-container:not(:hover) .ren-toggle {
+    opacity: 0.9;
+}
+
+/* ── Refresh / re-detect button ─────────────────────────────────── */
+
+.ren-refresh-btn {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor, #666) 60%, transparent);
+    border-radius: 4px;
+    color: inherit;
+    cursor: pointer;
+    font-size: 0.85em;
+    line-height: 1;
+    padding: 2px 5px;
+    opacity: 0.55;
+    transition: opacity 0.15s, transform 0.25s;
+}
+
+.ren-refresh-btn:hover {
+    opacity: 1;
+}
+
+.ren-refresh-btn:active {
+    transform: rotate(180deg);
 }
